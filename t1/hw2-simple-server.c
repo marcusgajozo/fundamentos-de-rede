@@ -17,6 +17,40 @@ static void error(char *s)
     perror(s);
     exit(1);
 }
+
+char *lerArquivoHTML(const char *nomeArquivo)
+{
+    FILE *file = fopen(nomeArquivo, "r");
+    if (file == NULL)
+    {
+        fprintf(stderr, "Erro ao abrir o arquivo %s\n", nomeArquivo);
+        return NULL;
+    }
+
+    // Determine o tamanho do arquivo
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Aloque memória para armazenar o conteúdo do arquivo
+    char *html_content = (char *)malloc(file_size + 1);
+    if (html_content == NULL)
+    {
+        fprintf(stderr, "Erro ao alocar memória\n");
+        fclose(file);
+        return NULL;
+    }
+
+    // Leia o conteúdo do arquivo e armazene-o na variável html_content
+    fread(html_content, 1, file_size, file);
+    html_content[file_size] = '\0'; // Adicione um terminador nulo no final
+
+    // Feche o arquivo
+    fclose(file);
+
+    return html_content;
+}
+
 /* terminates the buffer with a null character and: */
 /* returns 0 if the first line has not yet been read */
 /* returns -1 if the first line fills (overflows) the buffer */
@@ -73,6 +107,7 @@ int main(int argc, char **argv)
         char prt[INET6_ADDRSTRLEN] = "unable to print";
         inet_ntop(AF_INET, &(from_sinp->sin_addr), prt, sizeof(prt));
         printf("accepted a connection from %s\n", prt);
+
         char buf[BUFSIZE];
         int received = 0;
         while (parse_request(buf, received, sizeof(buf)) == 0)
@@ -92,8 +127,18 @@ int main(int argc, char **argv)
             next_loop(sockfd);
         }
         char *code = "HTTP/1.0 404 Not Found\r\n";
+        char *page;
+        char header[1024];
         if (parse == 2)
             code = "HTTP/1.0 501 Not implemented\r\n";
+        if (parse == 1)
+        {
+            code = "HTTP/1.1 200 OK\r\n";
+            char *name_page = "index.html";
+            page = lerArquivoHTML(name_page);
+            size_t tamanho_bytes = strlen(page) * sizeof(char);
+            sprintf(header, "Connection: close\r\nServer: Site\r\nContent-Type: text/html\r\nContent-Length: %zu\r\n", tamanho_bytes);
+        }
         send(sockfd, code, strlen(code), 0);
         char date_buf[BUFSIZE];
         time_t now = time(NULL);
@@ -101,10 +146,14 @@ int main(int argc, char **argv)
         snprintf(date_buf, sizeof(date_buf), "Date: %s\n", time_str);
         /* time_str ends with \n. We replace it with \r to give \r\n */
         *(index(date_buf, '\n')) = '\r';
-        send(sockfd, date_buf, strlen(date_buf), 0);
-        char server_id[] = "Server: dummy HTTP server\r\n";
-        send(sockfd, server_id, strlen(server_id), 0);
-        send(sockfd, "\r\n", 2, 0);
+        strcat(header, date_buf);
+        char server_id[] = "Server: dummy HTTP server\r\n\r\n";
+        strcat(header, server_id);
+        if (page)
+        {
+            send(sockfd, header, strlen(header), 0);
+            send(sockfd, page, strlen(page), 0);
+        }
         shutdown(sockfd, SHUT_WR); /* not useful, since we close right away */
         close(sockfd);
     }
