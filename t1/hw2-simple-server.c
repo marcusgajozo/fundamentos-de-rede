@@ -118,6 +118,8 @@ int main(int argc, char **argv)
                 printf("received %d\n", r);
                 next_loop(sockfd);
             }
+            buf[r] = '\0';
+            printf("Message from client:\n%s", buf);
             received += r;
         }
         int parse = parse_request(buf, received, sizeof(buf));
